@@ -1,14 +1,23 @@
 from pathlib import Path
+import traceback
+import sys
 
 class StaticManager:
     def __init__(self):
-        print("theSunset StaticManager v1 initializing...")
-        self.STATIC_DIR = Path('static')
-        self.BOTTLES_DIR = self.STATIC_DIR / "bottles"
-        self.DESC_DIR = self.STATIC_DIR / "descriptions"
-        
-        self.BOTTLES_DIR.mkdir(parents=True, exist_ok=True)
-        self.DESC_DIR.mkdir(parents=True, exist_ok=True)
+        print("StaticManager initializing...", end="")
+        try:
+            self.STATIC_DIR = Path('static')
+            self.BOTTLES_DIR = self.STATIC_DIR / "bottles"
+            self.DESC_DIR = self.STATIC_DIR / "descriptions"
+            
+            self.BOTTLES_DIR.mkdir(parents=True, exist_ok=True)
+            self.DESC_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"    [FAIL] - {e}")
+            traceback.print_exc()
+            sys.exit(1)
+        else:
+            print("    [OK]")
         
     def bottle_path(self, wID):
         return self.BOTTLES_DIR / f"{wID}.jpg"
