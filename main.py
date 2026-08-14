@@ -1,7 +1,19 @@
-from flask import Flask, jsonify, Blueprint, render_template, request
+from flask import Flask, jsonify, Blueprint, render_template, request, abort, url_for, redirect
 from flask_sqlalchemy import SQLAlchemy
 from flask import cli
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    login_user,
+    logout_user,
+    login_required,
+    current_user
+)
 import werkzeug.serving
+
+from dotenv import load_dotenv
+import os
+
 
 from pyfiglet import figlet_format
 import logging
@@ -11,6 +23,7 @@ from auth import TOTPctl
 
 print("theSunset backend initializing...")
 
+load_dotenv()
 # -------======= Косметика =======--------
 
 original_log = werkzeug.serving._log
@@ -39,12 +52,48 @@ werkzeug_logger.addFilter(HidePongFilter())
 # -------======= Flask и SQLAlchemy =======--------
 
 app = Flask(__name__)
+secret = os.getenv("FLASK_SECRET")
+
+if not secret:
+    raise RuntimeError("FLASK_SECRET is not set")
+
+app.config["SECRET_KEY"] = secret
 
 content_bp = Blueprint('content', __name__)
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///wines.db'
 db = SQLAlchemy(app)
+
+# --------======= Логинизация =======--------
+
+lm = LoginManager()
+lm.init_app(app)
+
+lm.login_view = "content.login"
+
+class AdminUser(UserMixin):
+    def __init__(self):
+        self.id = "sommelier"
+        
+admin_user = AdminUser()
+
+@lm.user_loader
+def load_user(user_id):
+    if user_id == admin_user.id:
+        return admin_user
+
+    return None
+
+@lm.unauthorized_handler
+def unauthorized():
+    if request.blueprint == "api":
+        return jsonify({
+            "ok": False,
+            "error": "unauthorized"
+        }), 401
+
+    return redirect(url_for("content.login"))
 
 # --------======= Модель данных =======--------
 
@@ -95,9 +144,41 @@ def wine_detail(wine_id):
 
 # --------======= Маршруты API =======--------
 
+#                                    (пинг)
+
 @api_bp.route('/pong')
 def pong():
     return jsonify({"ok":True,"one_detail":"если я ответил, фактически я жив"})
+
+#                                логинизация
+@api_bp.post('/auth/login')
+def login():
+    data = request.get_json()
+    code = data.get("code")
+    if not code:
+        abort(400)
+        
+    verify = auth.verify(code)
+    if not verify:
+        abort(401)
+    else:
+        login_user(admin_user)
+        return
+    
+@api_bp.post('/auth/logout')
+@login_required
+def logout():
+    logout_user()
+
+    return 
+
+@api_bp.get('/auth/status')
+def auth_status():
+    return jsonify({
+        "authenticated": current_user.is_authenticated
+    })
+
+#                      информация о винах/вине
 
 @api_bp.route('/wines/<int:wID>')
 def onewine(wID):
@@ -108,6 +189,8 @@ def onewine(wID):
 def get_wines():
     wines = Wine.query.all()
     return jsonify([wine.to_dict() for wine in wines])
+
+#                                ассеты
 
 @api_bp.route('/assets/info/<int:wID>')
 def assets_info(wID):
@@ -126,9 +209,10 @@ def assets_info(wID):
         }}
     )
 
+# --------======= Инициализационная часть =======--------
+
 app.register_blueprint(content_bp)
 app.register_blueprint(api_bp)
-
 
 with app.app_context():
     db.create_all()
@@ -146,10 +230,13 @@ if __name__ == '__main__':
     
     print(figlet_format("theSunset", font="larry3d"))
     print("theSunset indev 0.2 | whole project 5.0")
-    print("Written by CPWB Ltd. (Lavroovich) | Licensed under GPLv3")
+    print("Written by CPWB Ltd. (Lavroovich) | Licensed under GPLv2")
     print()
     print("server: http://127.0.0.1:5000")
     print()
     app.run()
-
-    
+else:
+    print('production run detected!')
+    print()
+    print("theSunset indev 0.3 | whole project 5.0")
+    print("Written by CPWB Ltd. (Lavroovich) | Licensed under GPLv2")
